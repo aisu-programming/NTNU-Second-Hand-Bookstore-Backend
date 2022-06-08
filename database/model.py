@@ -139,6 +139,7 @@ class ProductEntity(db.Model):
     language     = Column(VARCHAR(10),             nullable=False)
     extra_desc   = Column(VARCHAR(10),             nullable=False)
     comments     = Column(JSON)  # A list of CommentEntity.comment_id
+    update_time  = Column(DATETIME)
     create_time  = Column(DATETIME)
     # tags         = Column(JSON)
 
@@ -166,6 +167,7 @@ class ProductEntity(db.Model):
         self.comments   = []
 
     def register(self):
+        self.update_time = datetime.now()
         self.create_time = datetime.now()
         db.session.add(self)
         db.session.commit()
@@ -326,5 +328,10 @@ class LikesRelationship(db.Model):
     def register(self):
         self.create_time = datetime.now()
         db.session.add(self)
+        db.session.commit()
+        return
+
+    def remove(self):
+        db.session.delete(self)
         db.session.commit()
         return
