@@ -82,7 +82,7 @@ def get_product_detail(**kwargs):
         product_id = request.args.get('productId')
         product = ProductEntity.query.filter_by(product_id=product_id).first()
         if product is None:
-            flask_logger.warning(f"ProductIdNotExists: IP '{kwargs['remote_addr']}' viewed product page with product_id '{product_id}'")
+            flask_logger.warning(f"ProductIdNotExists: IP '{kwargs['remote_addr']}' tried to view product '{product_id}'")
             return HTTPError("Product ID not exists.", 403)
 
         if "user" in kwargs:
@@ -112,7 +112,7 @@ def like_product(product_id, **kwargs):
             product_id = product.product_id
             like = LikesRelationship.query.filter_by(user_id=user_id, product_id=product_id).first()
             if like is not None:
-                flask_logger.warning(f"AlreadyLike: User '{user.username}' ({user.display_name}) liked product which product_id is '{product_id}'")
+                flask_logger.warning(f"AlreadyLike: User '{user.username}' ({user.display_name}) tried to like product '{product_id}'")
                 return HTTPError("Already liked.", 403)
             LikesRelationship(user_id, product_id).register()
             return HTTPResponse("Success.")
@@ -127,7 +127,7 @@ def like_product(product_id, **kwargs):
             product_id = product.product_id
             like = LikesRelationship.query.filter_by(user_id=user_id, product_id=product_id).first()
             if like is None:
-                flask_logger.warning(f"NotLiked: User '{user.username}' ({user.display_name}) unliked product which product_id is '{product_id}'")
+                flask_logger.warning(f"NotLiked: User '{user.username}' ({user.display_name}) tried to unlike product '{product_id}'")
                 return HTTPError("Haven't liked.", 403)
             like.remove()
             return HTTPResponse("Success.")
@@ -139,9 +139,32 @@ def like_product(product_id, **kwargs):
     user    = kwargs["user"].entity
     product = ProductEntity.query.filter_by(product_id=product_id).first()
     if product is None:
-        like_str = { "POST": "liked", "DELETE": "unliked" }[request.method]
-        flask_logger.warning(f"ProductIdNotExists: User '{user.username}' ({user.display_name}) {like_str} product which product_id is '{product_id}'")
+        like_str = { "POST": "like", "DELETE": "unlike" }[request.method]
+        flask_logger.warning(f"ProductIdNotExists: User '{user.username}' ({user.display_name}) tried to {like_str} product '{product_id}'")
         return HTTPError("Product ID not exists.", 403)
         
     methods = { "POST": like, "DELETE": unlike }
     return methods[request.method](user, product)
+
+
+@product_api.route("/comment", methods=["POST"])
+@login_required
+@rate_limit
+@Request.json("productId: str", "content: str")
+def leave_comment(product_id, content, **kwargs):
+    
+    try:
+        user = kwargs["user"].entity
+
+        # Check product exist
+        product = ProductEntity.query.filter_by(product_id=product_id).first()
+        if product is None:
+            flask_logger.warning(f"ProductIdNotExists: User '{user.username}' ({user.display_name}) tried to comment product '{product_id}'")
+            return HTTPError("Product ID not exists.", 403)
+
+        product.add_comment(user.user_id, content)
+        return HTTPResponse("Success.")
+
+    except Exception as ex:
+        flask_logger.error(f"Unknown exception: {str(ex)}")
+        return HTTPError(str(ex), 404)
