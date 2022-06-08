@@ -45,7 +45,8 @@ def search_products(keywords, **kwargs):
         keywords = keywords.split(' ')
         products = ProductEntity.query.all()
         products_not_sold_out = list(filter(lambda p: not p.sold_out, products))
-        products_is_sold_out  = list(filter(lambda p: p.sold_out, products))
+        products_not_sold_out = list(filter(lambda p:     p.for_sale, products_not_sold_out))
+        products_is_sold_out  = list(filter(lambda p:     p.sold_out, products))
         products_not_sold_out = sorted(products_not_sold_out,
             key=lambda p: sum([
                 sum([ kw in p.name       for kw in keywords ]) * 100000,
@@ -79,11 +80,9 @@ def search_products(keywords, **kwargs):
 def get_product_detail(**kwargs):
 
     try:
-        product_id = request.args.get('productId')
+        product_id = int(request.args.get('productId'))
         product = ProductEntity.query.filter_by(product_id=product_id).first()
-        if product is None:
-            flask_logger.warning(f"ProductIdNotExists: IP '{kwargs['remote_addr']}' tried to view product '{product_id}'")
-            return HTTPError("Product ID not exists.", 403)
+        if product is None: raise ProductIdNotExistsException
 
         # Create or update seen relationship if is logged in
         if "user" in kwargs:
@@ -96,6 +95,14 @@ def get_product_detail(**kwargs):
 
         return HTTPResponse("Success.", data={"details": product.detail_json})
 
+    except ValueError:
+        flask_logger.warning(f"ValueError: IP '{kwargs['remote_addr']}' tried to view product '{product_id}'")
+        return HTTPError("Requested Value With Wrong Type.", 400)
+
+    except ProductIdNotExistsException:
+        flask_logger.warning(f"ProductIdNotExists: IP '{kwargs['remote_addr']}' tried to view product '{product_id}'")
+        return HTTPError("Product ID not exists.", 403)
+
     except Exception as ex:
         flask_logger.error(f"Unknown exception: {str(ex)} (IP '{kwargs['remote_addr']}')")
         return HTTPError(str(ex), 404)
@@ -104,7 +111,7 @@ def get_product_detail(**kwargs):
 @product_api.route("/like", methods=["POST", "DELETE"])
 @login_required
 @rate_limit
-@Request.json("productId: str")
+@Request.json("productId: int")
 def like_or_unlike_product(product_id, **kwargs):
 
     user = kwargs["user"].entity
@@ -148,16 +155,21 @@ def like_or_unlike_product(product_id, **kwargs):
 @product_api.route("/comment", methods=["POST"])
 @login_required
 @rate_limit
-@Request.json("productId: str", "content: str")
+@Request.json("productId: int", "content: str")
 def leave_comment(product_id, content, **kwargs):
     
     user = kwargs["user"].entity
     try:
+        if len(content) > 100: raise DataIncorrectException
         # Check product exist
         product = ProductEntity.query.filter_by(product_id=product_id).first()
         if product is None: raise ProductIdNotExistsException
         product.add_comment(user.user_id, content)
         return HTTPResponse("Success.")
+
+    except DataIncorrectException:
+        flask_logger.warning(f"DataIncorrectException: User '{user.username}' ({user.display_name}) tried to comment product '{product_id}'")
+        return HTTPError("Comment exceeds length limitation.", 403)
 
     except ProductIdNotExistsException:
         flask_logger.warning(f"ProductIdNotExists: User '{user.username}' ({user.display_name}) tried to comment product '{product_id}'")
