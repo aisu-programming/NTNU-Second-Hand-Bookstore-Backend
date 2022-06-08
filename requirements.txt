@@ -1,0 +1,18 @@
+# Environment
+python-dotenv
+
+
+# Database
+pymysql
+pytz
+
+
+# Back-End
+flask
+flask-cors
+flask-sqlalchemy
+pyopenssl
+PyJWT
+tqdm
+# pycryptodomex
+# bitstring

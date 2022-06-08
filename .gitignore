@@ -1,0 +1,10 @@
+# Virtual Environment
+venv*
+
+# Python
+*.pyc
+
+# Programming
+.config
+logs
+test.py
