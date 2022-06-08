@@ -32,7 +32,7 @@ def get_top10_products(**kwargs):
         return HTTPResponse("Success.", data={"products": products})
 
     except Exception as ex:
-        flask_logger.error(f"Unknown exception: {str(ex)}")
+        flask_logger.error(f"Unknown exception: {str(ex)} (IP '{kwargs['remote_addr']}')")
         return HTTPError(str(ex), 404)
 
 
@@ -69,7 +69,7 @@ def search_products(keywords, **kwargs):
         return HTTPResponse("Success.", data={"products": products})
 
     except Exception as ex:
-        flask_logger.error(f"Unknown exception: {str(ex)}")
+        flask_logger.error(f"Unknown exception: {str(ex)} (IP '{kwargs['remote_addr']}')")
         return HTTPError(str(ex), 404)
 
 
@@ -85,6 +85,7 @@ def get_product_detail(**kwargs):
             flask_logger.warning(f"ProductIdNotExists: IP '{kwargs['remote_addr']}' tried to view product '{product_id}'")
             return HTTPError("Product ID not exists.", 403)
 
+        # Create or update seen relationship if is logged in
         if "user" in kwargs:
             user_id = kwargs["user"].entity.user_id
             seen = SeenRelationship.query.filter_by(user_id=user_id, product_id=product_id).first()
@@ -96,7 +97,7 @@ def get_product_detail(**kwargs):
         return HTTPResponse("Success.", data={"details": product.detail_json})
 
     except Exception as ex:
-        flask_logger.error(f"Unknown exception: {str(ex)}")
+        flask_logger.error(f"Unknown exception: {str(ex)} (IP '{kwargs['remote_addr']}')")
         return HTTPError(str(ex), 404)
 
 
@@ -104,47 +105,44 @@ def get_product_detail(**kwargs):
 @login_required
 @rate_limit
 @Request.json("productId: str")
-def like_product(product_id, **kwargs):
+def like_or_unlike_product(product_id, **kwargs):
 
-    def like(user, product):
-        try:
-            user_id    = user.user_id
-            product_id = product.product_id
-            like = LikesRelationship.query.filter_by(user_id=user_id, product_id=product_id).first()
-            if like is not None:
-                flask_logger.warning(f"AlreadyLike: User '{user.username}' ({user.display_name}) tried to like product '{product_id}'")
-                return HTTPError("Already liked.", 403)
-            LikesRelationship(user_id, product_id).register()
+    user = kwargs["user"].entity
+    try:
+        product = ProductEntity.query.filter_by(product_id=product_id).first()
+        if product is None: raise ProductIdNotExistsException
+
+        def like_product(user, product_id):
+            like = LikesRelationship.query.filter_by(user_id=user.user_id, product_id=product_id).first()
+            if like is not None: raise AlreadyLikedException
+            LikesRelationship(user.user_id, product_id).register()
             return HTTPResponse("Success.")
 
-        except Exception as ex:
-            flask_logger.error(f"Unknown exception: {str(ex)}")
-            return HTTPError(str(ex), 404)
-
-    def unlike(user, product):
-        try:
-            user_id    = user.user_id
-            product_id = product.product_id
-            like = LikesRelationship.query.filter_by(user_id=user_id, product_id=product_id).first()
-            if like is None:
-                flask_logger.warning(f"NotLiked: User '{user.username}' ({user.display_name}) tried to unlike product '{product_id}'")
-                return HTTPError("Haven't liked.", 403)
+        def unlike_product(user, product_id):
+            like = LikesRelationship.query.filter_by(user_id=user.user_id, product_id=product_id).first()
+            if like is None: raise NotLikedException
             like.remove()
             return HTTPResponse("Success.")
 
-        except Exception as ex:
-            flask_logger.error(f"Unknown exception: {str(ex)}")
-            return HTTPError(str(ex), 404)
-
-    user    = kwargs["user"].entity
-    product = ProductEntity.query.filter_by(product_id=product_id).first()
-    if product is None:
+        methods = { "POST": like_product, "DELETE": unlike_product }
+        return methods[request.method](user, product_id)
+    
+    except ProductIdNotExistsException:
         like_str = { "POST": "like", "DELETE": "unlike" }[request.method]
         flask_logger.warning(f"ProductIdNotExists: User '{user.username}' ({user.display_name}) tried to {like_str} product '{product_id}'")
         return HTTPError("Product ID not exists.", 403)
-        
-    methods = { "POST": like, "DELETE": unlike }
-    return methods[request.method](user, product)
+
+    except AlreadyLikedException:
+        flask_logger.warning(f"AlreadyLike: User '{user.username}' ({user.display_name}) tried to like product '{product_id}'")
+        return HTTPError("Already liked.", 403)
+
+    except NotLikedException:
+        flask_logger.warning(f"NotLiked: User '{user.username}' ({user.display_name}) tried to unlike product '{product_id}'")
+        return HTTPError("Haven't liked.", 403)
+
+    except Exception as ex:
+        flask_logger.error(f"Unknown exception: {str(ex)} (IP '{kwargs['remote_addr']}')")
+        return HTTPError(str(ex), 404)
 
 
 @product_api.route("/comment", methods=["POST"])
@@ -153,18 +151,18 @@ def like_product(product_id, **kwargs):
 @Request.json("productId: str", "content: str")
 def leave_comment(product_id, content, **kwargs):
     
+    user = kwargs["user"].entity
     try:
-        user = kwargs["user"].entity
-
         # Check product exist
         product = ProductEntity.query.filter_by(product_id=product_id).first()
-        if product is None:
-            flask_logger.warning(f"ProductIdNotExists: User '{user.username}' ({user.display_name}) tried to comment product '{product_id}'")
-            return HTTPError("Product ID not exists.", 403)
-
+        if product is None: raise ProductIdNotExistsException
         product.add_comment(user.user_id, content)
         return HTTPResponse("Success.")
 
+    except ProductIdNotExistsException:
+        flask_logger.warning(f"ProductIdNotExists: User '{user.username}' ({user.display_name}) tried to comment product '{product_id}'")
+        return HTTPError("Product ID not exists.", 403)
+
     except Exception as ex:
-        flask_logger.error(f"Unknown exception: {str(ex)}")
+        flask_logger.error(f"Unknown exception: {str(ex)} (IP '{kwargs['remote_addr']}')")
         return HTTPError(str(ex), 404)

@@ -55,14 +55,14 @@ class Connection(db.Model):
 
 class AccountEntity(db.Model):
     __tablename__ = "account"
-    user_id                 = Column(SMALLINT(unsigned=True),  primary_key=True)
-    username                = Column(VARCHAR(30), unique=True, nullable=False)
-    password                = Column(TEXT(256),                nullable=False)
-    display_name            = Column(VARCHAR(30),              nullable=False)
-    email                   = Column(VARCHAR(50),              nullable=False)
-    phone                   = Column(CHAR(10),                 nullable=False)
-    role                    = Column(ENUM("User", "Admin"),    default="User")
-    create_time             = Column(DATETIME)
+    user_id      = Column(SMALLINT(unsigned=True),  primary_key=True)
+    username     = Column(VARCHAR(30), unique=True, nullable=False)
+    password     = Column(TEXT(256),                nullable=False)
+    display_name = Column(VARCHAR(30),              nullable=False)
+    email        = Column(VARCHAR(50),              nullable=False)
+    phone        = Column(CHAR(10),                 nullable=False)
+    role         = Column(ENUM("User", "Admin"),    default="User")
+    create_time  = Column(DATETIME,                 default=datetime.now)
 
     def __init__(self, username, password, display_name, email, phone):
         self.username     = username
@@ -72,7 +72,7 @@ class AccountEntity(db.Model):
         self.phone        = phone
 
     def register(self):
-        self.create_time = datetime.now()
+        # self.create_time = datetime.now()
         db.session.add(self)
         db.session.commit()
         return
@@ -89,33 +89,49 @@ class AccountEntity(db.Model):
         db.session.commit()
         return
 
-    def json(self):
-        collection = [
-            ProductEntity.query.filter_by(product_id=likes.product_id).first().json()
-            for likes in LikesRelationship.query.filter_by(user_id=self.user_id).all()
+    @property
+    def collection(self):
+        likes = LikesRelationship.query.filter_by(user_id=self.user_id).all()
+        likes = sorted(likes, key=lambda l: l.create_time, reverse=True)
+        return [
+            ProductEntity.query.filter_by(product_id=like.product_id).first().overview_json
+            for like in likes
         ]
-        history    = [  ]
-        return {
-            "username"   : self.username,
-            "displayName": self.display_name,
-            "email"      : self.email,
-            "phone"      : self.phone,
-            "collection" : collection,
-            "history"    : history,
-            "role"       : self.role,
-            "create_time": self.create_time,
-        }
+
+    @property
+    def history(self):
+        seens = SeenRelationship.query.filter_by(user_id=self.user_id).all()
+        seens = sorted(seens, key=lambda s: s.recent_time, reverse=True)
+        return [
+            ProductEntity.query.filter_by(product_id=seen.product_id).first().overview_json
+            for seen in seens
+        ]
+
+    # @property
+    # def json(self):
+    #     return {
+    #         "username"   : self.username,
+    #         "displayName": self.display_name,
+    #         "email"      : self.email,
+    #         "phone"      : self.phone,
+    #         "collection" : self.collection,
+    #         "history"    : self.history,
+    #         "role"       : self.role,
+    #         "create_time": self.create_time,
+    #     }
 
 
 class BookEntity(db.Model):
     __tablename__ = "book"
-    book_id = Column(SMALLINT(unsigned=True), primary_key=True)
-    ISBN    = Column(VARCHAR(13), nullable=False, unique=True)
+    book_id      = Column(SMALLINT(unsigned=True), primary_key=True)
+    ISBN         = Column(VARCHAR(13), nullable=False, unique=True)
+    create_time  = Column(DATETIME, default=datetime.now)
 
     def __init__(self, ISBN):
         self.ISBN = ISBN
 
     def register(self):
+        # self.create_time = datetime.now()
         db.session.add(self)
         db.session.commit()
         return
@@ -139,8 +155,8 @@ class ProductEntity(db.Model):
     language     = Column(VARCHAR(10),             nullable=False)
     extra_desc   = Column(VARCHAR(10),             nullable=False)
     comments     = Column(JSON)  # A list of CommentEntity.comment_id
-    update_time  = Column(DATETIME)
-    create_time  = Column(DATETIME)
+    update_time  = Column(DATETIME,                default=datetime.now)  # , onupdate=datetime.now)
+    create_time  = Column(DATETIME,                default=datetime.now)
     # tags         = Column(JSON)
 
     def __init__(
@@ -167,16 +183,34 @@ class ProductEntity(db.Model):
         self.comments   = []
 
     def register(self):
-        self.update_time = datetime.now()
-        self.create_time = datetime.now()
+        # self.update_time = datetime.now()
+        # self.create_time = datetime.now()
         db.session.add(self)
         db.session.commit()
         return
 
-    def add_comment(self, user, content):
-        comment = CommentEntity(user, content)
+    def add_comment(self, user_id, content):
+        comment = CommentEntity(user_id, content)
         comment.register()
         self.comments.append(comment.comment_id)
+        db.session.commit()
+        return
+
+    def launch(self):
+        self.for_sale = True
+        self.update_time = datetime.now()
+        db.session.commit()
+        return
+
+    def discontinue(self):
+        self.for_sale = False
+        self.update_time = datetime.now()
+        db.session.commit()
+        return
+
+    def out_of_stock(self):
+        self.sold_out = True
+        self.update_time = datetime.now()
         db.session.commit()
         return
 
@@ -233,29 +267,30 @@ class ProductEntity(db.Model):
             "extraDescription" : self.extra_desc,
             "comments"         : self.comments,
             "createTime"       : self.create_time,
+            "updateTime"       : self.update_time,
         }
 
 
 class CommentEntity(db.Model):
     __tablename__ = "comment"
     comment_id  = Column(SMALLINT(unsigned=True), primary_key=True)
-    user        = Column(SMALLINT(unsigned=True), nullable=False)  # user_id
+    user_id     = Column(SMALLINT(unsigned=True), nullable=False)  # user_id
     content     = Column(VARCHAR(100),            nullable=False)
-    create_time = Column(DATETIME,                nullable=False)
+    create_time = Column(DATETIME,                default=datetime.now)
 
-    def __init__(self, user, content):
-        self.user    = user
+    def __init__(self, user_id, content):
+        self.user_id = user_id
         self.content = content
 
     def register(self):
-        self.create_time = datetime.now()
+        # self.create_time = datetime.now()
         db.session.add(self)
         db.session.commit()
         return
 
     @property
     def json(self):
-        user = AccountEntity.query.filter_by(user_id=self.user).first()
+        user = AccountEntity.query.filter_by(user_id=self.user_id).first()
         return {
             "displayName": user.display_name,
             "content"    : self.content,
@@ -266,18 +301,18 @@ class CommentEntity(db.Model):
 class NotificationEntity(db.Model):
     __tablename__ = "notification"
     notification_id = Column(SMALLINT(unsigned=True), primary_key=True)
-    user            = Column(SMALLINT(unsigned=True), nullable=False)  # user_id
+    user_id         = Column(SMALLINT(unsigned=True), nullable=False)  # user_id
     read            = Column(BOOLEAN,                 nullable=False)
     content         = Column(VARCHAR(100),            nullable=False)
-    create_time     = Column(DATETIME,                nullable=False)
+    create_time     = Column(DATETIME,                default=datetime.now)
 
-    def __init__(self, user, content):
-        self.user    = user
+    def __init__(self, user_id, content):
+        self.user_id = user_id
         self.read    = False
         self.content = content
 
     def register(self):
-        self.create_time = datetime.now()
+        # self.create_time = datetime.now()
         db.session.add(self)
         db.session.commit()
         return
@@ -295,16 +330,16 @@ class SeenRelationship(db.Model):
     __tablename__ = "seen"
     user_id     = Column(SMALLINT(unsigned=True), primary_key=True)
     product_id  = Column(SMALLINT(unsigned=True), primary_key=True)
-    recent_time = Column(DATETIME)
-    create_time = Column(DATETIME)
+    recent_time = Column(DATETIME,                default=datetime.now)
+    create_time = Column(DATETIME,                default=datetime.now)
 
     def __init__(self, user_id, product_id):
         self.user_id    = user_id
         self.product_id = product_id
 
     def register(self):
-        self.recent_time = datetime.now()
-        self.create_time = datetime.now()
+        # self.recent_time = datetime.now()
+        # self.create_time = datetime.now()
         db.session.add(self)
         db.session.commit()
         return
@@ -319,14 +354,14 @@ class LikesRelationship(db.Model):
     __tablename__ = "likes"
     user_id     = Column(SMALLINT(unsigned=True), primary_key=True)
     product_id  = Column(SMALLINT(unsigned=True), primary_key=True)
-    create_time = Column(DATETIME)
+    create_time = Column(DATETIME,                default=datetime.now)
 
     def __init__(self, user_id, product_id):
         self.user_id    = user_id
         self.product_id = product_id
 
     def register(self):
-        self.create_time = datetime.now()
+        # self.create_time = datetime.now()
         db.session.add(self)
         db.session.commit()
         return

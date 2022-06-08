@@ -22,11 +22,9 @@ def rate_limit(original_function=None, ip_based=False, limit=None):
         def wrapper(*args, **kwargs):
 
             try:
-                if ip_based:
-                    target = request.remote_addr
-                    kwargs["remote_addr"] = target
-                else:
-                    target = kwargs["user"].entity.username
+                kwargs["remote_addr"] = request.remote_addr
+                if ip_based: target = kwargs["remote_addr"]
+                else       : target = kwargs["user"].entity.username
 
                 target_type = ["username", "IP"][int(ip_based)]
                 conn = Connection.query.filter_by(target=target).first()
