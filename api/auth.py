@@ -53,6 +53,37 @@ def login_required(function):
     return wrapper
 
 
+@auth_api.route("/register", methods=["POST"])
+@rate_limit(ip_based=True)
+@Request.json("username: str", "password: str", "display_name: str", "email: str", "phone: str")
+def register(username, password, display_name, email, phone, **kwargs):
+    try:
+
+        if len(username) >= 30                   : raise DataIncorrectException("Username")
+        if len(display_name) >= 30               : raise DataIncorrectException("Display name")
+        if len(email) >= 50 or ('@' not in email): raise DataIncorrectException("Email")
+        if len(phone) >= 10                      : raise DataIncorrectException("Phone")
+
+        flask_logger.info(f"IP '{kwargs['remote_addr']}' tries to register with username '{username}'.")
+        Account().register(username, password, display_name, email, phone)
+        flask_logger.info(f"User '{username}' ({display_name}) has successfully registered.")
+        return HTTPResponse("Success.")
+
+    except DataIncorrectException as ex:
+        flask_logger.warning(f"DataIncorrectException: IP '{kwargs['remote_addr']}' / Username '{username}'")
+        return HTTPError(f"{ex} invalid.", 403)
+
+    except UsernameRepeatedException:
+        flask_logger.warning(f"UsernameRepeatedException: IP '{kwargs['remote_addr']}' / Username '{username}'")
+        return HTTPError("Username repeated.", 403)
+
+    except Exception as ex:
+        flask_logger.error(f"Unknown exception: IP '{kwargs['remote_addr']}' / Username '{username}' / Message: {str(ex)}")
+        print(f"Unknown exception: IP '{kwargs['remote_addr']}' / Username '{username}' / Password '{password}' / " + \
+                                 f"DisplayName '{display_name}' / Email '{email}' / Phone '{phone}' / Message: {str(ex)}")
+        return HTTPError(str(ex), 404)
+
+
 @auth_api.route("/session", methods=["GET", "POST"])
 @rate_limit(ip_based=True)
 def session(**kwargs):
@@ -88,24 +119,3 @@ def session(**kwargs):
 
     methods = { "GET": logout(), "POST": login(**kwargs) }
     return methods[request.method]
-
-
-@auth_api.route("/register", methods=["POST"])
-@rate_limit(ip_based=True)
-@Request.json("username: str", "password: str", "display_name: str", "email: str", "phone: str")
-def register(username, password, display_name, email, phone, **kwargs):
-    try:
-        flask_logger.info(f"IP '{kwargs['remote_addr']}' tries to register with username '{username}'.")
-        Account().register(username, password, display_name, email, phone)
-        flask_logger.info(f"User '{username}' ({display_name}) has successfully registered.")
-        return HTTPResponse("Success.")
-
-    except UsernameRepeatedException:
-        flask_logger.warning(f"UsernameRepeatedException: IP '{kwargs['remote_addr']}' / Username '{username}'")
-        return HTTPError("Username repeated.", 403)
-
-    except Exception as ex:
-        flask_logger.error(f"Unknown exception: IP '{kwargs['remote_addr']}' / Username '{username}' / Message: {str(ex)}")
-        print(f"Unknown exception: IP '{kwargs['remote_addr']}' / Username '{username}' / Password '{password}' / " + \
-                                 f"DisplayName '{display_name}' / Email '{email}' / Phone '{phone}' / Message: {str(ex)}")
-        return HTTPError(str(ex), 404)
