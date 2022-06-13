@@ -22,5 +22,5 @@ class AlreadyLikedException(Exception):
 class ProductAccessInvalidException(Exception):
     pass
 
-class DataIncorrectException(Exception):
+class DataInvalidException(Exception):
     pass

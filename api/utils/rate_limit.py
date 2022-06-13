@@ -35,17 +35,17 @@ def rate_limit(original_function=None, ip_based=False, limit=None):
                     now = datetime.now()
                     if conn.accept_time is not None and conn.accept_time > now:
                         flask_logger.warning(f"Connection from {target_type}: '{target}' is still under banning. " + \
-                                             f"(Banned turn: {conn.banned_turn})")
-                        raise BannedException(f"Still under banning.")
+                                                f"(Banned turn: {conn.banned_turn})")
+                        raise BannedException("Still under banning.")
                     elif conn.accept_time is not None:
                         flask_logger.warning(f"Connection from {target_type}: '{target}' has been unbanned. " + \
-                                             f"(Banned turn: {conn.banned_turn})")
+                                                f"(Banned turn: {conn.banned_turn})")
                         conn.unban()
                     else:
                         conn.access()
                         if len(conn.records) > limit:
                             flask_logger.warning(f"DDoS suspicion detected from {target_type}: '{target}'. " + \
-                                                 f"(Banned turn: {conn.banned_turn} --> {conn.banned_turn+1})")
+                                                    f"(Banned turn: {conn.banned_turn} --> {conn.banned_turn+1})")
                             conn.ban()
                             raise BannedException("DDoS suspicion detected.")
 

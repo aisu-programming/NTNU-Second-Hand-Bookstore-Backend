@@ -27,7 +27,7 @@ class _Request(type):
                 def wrapper(*args, **kwargs):
                     data = getattr(request, content_type)
                     if data == None:
-                        return HTTPError(f"Unaccepted Content-Type {content_type}", 415)
+                        return HTTPError(f"Unaccepted Content-Type {content_type}.", 415)
                     try:
                         # Magic
                         kwargs.update({
@@ -49,7 +49,7 @@ class _Request(type):
                             )(l.split(':', 1)) for l in keys]
                         })
                     except ValueError:
-                        return HTTPError("Requested Value With Wrong Type", 400)
+                        return HTTPError("Requested Value With Wrong Type.", 400)
                     kwargs.update({ v: data.get(vars_dict[v]) for v in vars_dict })
                     return func(*args, **kwargs)
 

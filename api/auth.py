@@ -59,22 +59,22 @@ def login_required(function):
 def register(username, password, display_name, email, phone, **kwargs):
     try:
 
-        if len(username) >= 30                   : raise DataIncorrectException("Username")
-        if len(display_name) >= 30               : raise DataIncorrectException("Display name")
-        if len(email) >= 50 or ('@' not in email): raise DataIncorrectException("Email")
-        if len(phone) >= 10                      : raise DataIncorrectException("Phone")
+        if len(username) > 30                   : raise DataInvalidException("Username")
+        if len(display_name) > 30               : raise DataInvalidException("Display name")
+        if len(email) > 50 or ('@' not in email): raise DataInvalidException("Email")
+        if len(phone) > 10                      : raise DataInvalidException("Phone")
 
         flask_logger.info(f"IP '{kwargs['remote_addr']}' tries to register with username '{username}'.")
         Account().register(username, password, display_name, email, phone)
         flask_logger.info(f"User '{username}' ({display_name}) has successfully registered.")
         return HTTPResponse("Success.")
 
-    except DataIncorrectException as ex:
-        flask_logger.warning(f"DataIncorrectException: IP '{kwargs['remote_addr']}' / Username '{username}'")
+    except DataInvalidException as ex:
+        flask_logger.warning(f"DataInvalidException: IP '{kwargs['remote_addr']}' / Username '{username}'.")
         return HTTPError(f"{ex} invalid.", 403)
 
     except UsernameRepeatedException:
-        flask_logger.warning(f"UsernameRepeatedException: IP '{kwargs['remote_addr']}' / Username '{username}'")
+        flask_logger.warning(f"UsernameRepeatedException: IP '{kwargs['remote_addr']}' / Username '{username}'.")
         return HTTPError("Username repeated.", 403)
 
     except Exception as ex:
@@ -88,7 +88,7 @@ def register(username, password, display_name, email, phone, **kwargs):
 @rate_limit(ip_based=True)
 def session(**kwargs):
 
-    def logout():
+    def logout(**kwargs):
         cookies = { "jwt": None }
         return HTTPResponse("Goodbye!", cookies=cookies)
 
@@ -103,13 +103,13 @@ def session(**kwargs):
             return HTTPResponse("Success.", cookies=cookies)
 
         except UsernameNotExistException:
-            flask_logger.warning(f"UsernameNotExistException: IP '{kwargs['remote_addr']}' / Username '{username}'")
-            print(f"UsernameNotExistException: IP '{kwargs['remote_addr']}' / Username '{username}' / Password '{password}'")
+            flask_logger.warning(f"UsernameNotExistException: IP '{kwargs['remote_addr']}' / Username '{username}'.")
+            print(f"UsernameNotExistException: IP '{kwargs['remote_addr']}' / Username '{username}' / Password '{password}'.")
             return HTTPError("Username not exist.", 403)
 
         except PasswordWrongException:
-            flask_logger.warning(f"PasswordWrongException: IP '{kwargs['remote_addr']}' / Username '{username}'")
-            print(f"PasswordWrongException: IP '{kwargs['remote_addr']}' / Username '{username}' / Password '{password}'")
+            flask_logger.warning(f"PasswordWrongException: IP '{kwargs['remote_addr']}' / Username '{username}'.")
+            print(f"PasswordWrongException: IP '{kwargs['remote_addr']}' / Username '{username}' / Password '{password}'.")
             return HTTPError("Password incorrect.", 403)
 
         except Exception as ex:
@@ -117,5 +117,5 @@ def session(**kwargs):
             print(f"Unknown exception: IP '{kwargs['remote_addr']}' / Username '{username}' / Password '{password}' / Message: {str(ex)}")
             return HTTPError(str(ex), 404)
 
-    methods = { "GET": logout(), "POST": login(**kwargs) }
-    return methods[request.method]
+    methods = { "GET": logout, "POST": login }
+    return methods[request.method](**kwargs)
