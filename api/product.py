@@ -8,7 +8,7 @@ from api.utils.request import Request
 from api.utils.response import *
 from api.utils.rate_limit import rate_limit
 from api.auth import login_detect, login_required
-from database.model import ProductEntity, SeenRelationship, LikesRelationship
+from database.model import ProductEntity, NotificationEntity, SeenRelationship, LikesRelationship
 
 
 
@@ -47,6 +47,10 @@ def search_products(keywords, **kwargs):
         products_not_sold_out = list(filter(lambda p: not p.sold_out, products))
         products_not_sold_out = list(filter(lambda p:     p.for_sale, products_not_sold_out))
         products_is_sold_out  = list(filter(lambda p:     p.sold_out, products))
+        products_not_sold_out = list(filter(
+            lambda p: sum([ kw in p.name for kw in keywords ]) or sum([ kw in p.extra_desc for kw in keywords ]),
+            products_not_sold_out
+        ))
         products_not_sold_out = sorted(products_not_sold_out,
             key=lambda p: sum([
                 sum([ kw in p.name       for kw in keywords ]) * 100000,
@@ -56,6 +60,10 @@ def search_products(keywords, **kwargs):
             ]),
             reverse=True
         )
+        products_is_sold_out = list(filter(
+            lambda p: sum([ kw in p.name for kw in keywords ]) or sum([ kw in p.extra_desc for kw in keywords ]),
+            products_is_sold_out
+        ))
         products_is_sold_out = sorted(products_is_sold_out,
             key=lambda p: sum([
                 sum([ kw in p.name       for kw in keywords ]) * 100000,
@@ -80,7 +88,7 @@ def search_products(keywords, **kwargs):
 def get_product_detail(**kwargs):
 
     try:
-        product_id = int(request.args.get('productId'))
+        product_id = int(request.args.get("productId"))
         product = ProductEntity.query.filter_by(product_id=product_id).first()
         if product is None: raise ProductIdNotExistsException
 
@@ -111,41 +119,76 @@ def get_product_detail(**kwargs):
 @product_api.route("/like", methods=["POST", "DELETE"])
 @login_required
 @rate_limit
-@Request.json("productId: int")
+@Request.json("product_id: int")
 def like_or_unlike_product(product_id, **kwargs):
 
-    user = kwargs["user"].entity
     try:
+        user = kwargs["user"].entity
         product = ProductEntity.query.filter_by(product_id=product_id).first()
         if product is None: raise ProductIdNotExistsException
 
-        def like_product(user, product_id):
+        def like_product():
             like = LikesRelationship.query.filter_by(user_id=user.user_id, product_id=product_id).first()
             if like is not None: raise AlreadyLikedException
             LikesRelationship(user.user_id, product_id).register()
             return HTTPResponse("Success.")
 
-        def unlike_product(user, product_id):
+        def unlike_product():
             like = LikesRelationship.query.filter_by(user_id=user.user_id, product_id=product_id).first()
             if like is None: raise NotLikedException
             like.remove()
             return HTTPResponse("Success.")
 
         methods = { "POST": like_product, "DELETE": unlike_product }
-        return methods[request.method](user, product_id)
+        return methods[request.method]()
     
     except ProductIdNotExistsException:
         like_str = { "POST": "like", "DELETE": "unlike" }[request.method]
-        flask_logger.warning(f"ProductIdNotExists: User '{user.username}' ({user.display_name}) tried to {like_str} product '{product_id}'")
+        flask_logger.warning(f"ProductIdNotExists: User '{user.username}' ({user.display_name}) tried to {like_str} product '{product_id}'.")
         return HTTPError("Product ID not exists.", 403)
 
     except AlreadyLikedException:
-        flask_logger.warning(f"AlreadyLike: User '{user.username}' ({user.display_name}) tried to like product '{product_id}'")
+        flask_logger.warning(f"AlreadyLike: User '{user.username}' ({user.display_name}) tried to like product '{product_id}'.")
         return HTTPError("Already liked.", 403)
 
     except NotLikedException:
-        flask_logger.warning(f"NotLiked: User '{user.username}' ({user.display_name}) tried to unlike product '{product_id}'")
+        flask_logger.warning(f"NotLiked: User '{user.username}' ({user.display_name}) tried to unlike product '{product_id}'.")
         return HTTPError("Haven't liked.", 403)
+
+    except Exception as ex:
+        flask_logger.error(f"Unknown exception: {str(ex)} (IP '{kwargs['remote_addr']}')")
+        return HTTPError(str(ex), 404)
+
+
+@product_api.route("/order", methods=["POST"])
+@login_required
+@rate_limit
+@Request.json("product_id: int")
+def order_product(product_id, **kwargs):
+    
+    user = kwargs["user"].entity
+    try:
+        # Check product exist
+        product = ProductEntity.query.filter_by(product_id=product_id).first()
+        if product is None: raise ProductIdNotExistsException
+
+        if product.seller_id == user.user_id:
+            flask_logger.warning(f"ProductIdNotExists: User '{user.username}' ({user.display_name}) tried to order own product '{product_id}'")
+            return HTTPError("Ordering own product is invalid.", 403)
+
+        notification_for_seller = f"用戶 '{user.display_name}' 下訂了您的商品 '{product.name}'，" + \
+                                  f"他的 Email 為: {user.email} / 電話為: {user.phone}。"
+        notification_for_buyer  = f"您下訂了商品 '{product.name}'，賣家 '{product.seller.display_name}' 的 " + \
+                                  f"Email 為: {product.seller.email} / 電話為: {product.seller.phone}。"
+
+        NotificationEntity(product.seller_id, notification_for_seller).register()
+        NotificationEntity(user.user_id, notification_for_buyer).register()
+
+        return HTTPResponse("Success.")
+
+    except ProductIdNotExistsException:
+        flask_logger.warning(f"ProductIdNotExists: User '{user.username}' ({user.display_name}) tried to order product '{product_id}'")
+        return HTTPError("Product ID not exists.", 403)
 
     except Exception as ex:
         flask_logger.error(f"Unknown exception: {str(ex)} (IP '{kwargs['remote_addr']}')")
@@ -155,19 +198,19 @@ def like_or_unlike_product(product_id, **kwargs):
 @product_api.route("/comment", methods=["POST"])
 @login_required
 @rate_limit
-@Request.json("productId: int", "content: str")
+@Request.json("product_id: int", "content: str")
 def leave_comment(product_id, content, **kwargs):
     
     user = kwargs["user"].entity
     try:
-        if len(content) > 100: raise DataIncorrectException
+        if len(content) > 100: raise DataInvalidException
         # Check product exist
         product = ProductEntity.query.filter_by(product_id=product_id).first()
         if product is None: raise ProductIdNotExistsException
         product.add_comment(user.user_id, content)
         return HTTPResponse("Success.")
 
-    except DataIncorrectException:
+    except DataInvalidException:
         flask_logger.warning(f"DataIncorrectException: User '{user.username}' ({user.display_name}) tried to comment product '{product_id}'")
         return HTTPError("Comment exceeds length limitation.", 403)
 
