@@ -77,12 +77,12 @@ class AccountEntity(db.Model):
         db.session.commit()
         return
 
-    def update_password(self, password):
+    def change_password(self, password):
         self.password = hashlib.sha224(str.encode(password)).hexdigest()
         db.session.commit()
         return
 
-    def update_data(self, display_name, email, phone):
+    def edit_information(self, display_name, email, phone):
         self.display_name = display_name
         self.email        = email
         self.phone        = phone
@@ -143,7 +143,7 @@ class ProductEntity(db.Model):
     book_id      = Column(SMALLINT(unsigned=True), nullable=False, unique=True)  # BookEntity.book_id
     seller_id    = Column(SMALLINT(unsigned=True), nullable=False)  # AccountEntity.user_id
     name         = Column(VARCHAR(30),             nullable=False)
-    price        = Column(TINYINT(unsigned=True),  nullable=False)
+    price        = Column(SMALLINT(unsigned=True), nullable=False)
     # likes
     # views
     images       = Column(JSON)
@@ -153,28 +153,26 @@ class ProductEntity(db.Model):
     noted        = Column(BOOLEAN)
     location     = Column(VARCHAR(30),             nullable=False)
     language     = Column(VARCHAR(10),             nullable=False)
-    extra_desc   = Column(VARCHAR(10),             nullable=False)
+    extra_desc   = Column(VARCHAR(1000),           nullable=False)
     comments     = Column(JSON)  # A list of CommentEntity.comment_id
     update_time  = Column(DATETIME,                default=datetime.now)  # , onupdate=datetime.now)
     create_time  = Column(DATETIME,                default=datetime.now)
     # tags         = Column(JSON)
 
-    def __init__(
-        self, ISBN, seller_id, name, price, images, for_sale,
-        sold_out, condition, noted, location, language, extra_desc
-    ):
-        self.book = BookEntity.query.filter_by(ISBN=ISBN).first()
-        if self.book is None:
-            self.book = BookEntity(ISBN)
-            self.book.register()
-            self.book = BookEntity.query.filter_by(ISBN=ISBN).first()
-        self.book_id    = self.book.book_id
+    def __init__(self, ISBN, seller_id, name, price, images, 
+                 condition, noted, location, language, extra_desc):
+        book = BookEntity.query.filter_by(ISBN=ISBN).first()
+        if book is None:
+            book = BookEntity(ISBN)
+            book.register()
+            book = BookEntity.query.filter_by(ISBN=ISBN).first()
+        self.book_id    = book.book_id
         self.seller_id  = seller_id
         self.name       = name
         self.price      = price
         self.images     = images
-        self.for_sale   = for_sale
-        self.sold_out   = sold_out
+        self.for_sale   = False
+        self.sold_out   = False
         self.condition  = condition
         self.noted      = noted
         self.location   = location
@@ -192,12 +190,13 @@ class ProductEntity(db.Model):
     def add_comment(self, user_id, content):
         comment = CommentEntity(user_id, content)
         comment.register()
-        self.comments.append(comment.comment_id)
+        self.comments = self.comments + [ comment.comment_id ]
         db.session.commit()
         return
 
     def launch(self):
         self.for_sale = True
+        self.sold_out = False
         self.update_time = datetime.now()
         db.session.commit()
         return
@@ -214,6 +213,30 @@ class ProductEntity(db.Model):
         db.session.commit()
         return
 
+    def update(self, ISBN, name, price, images, condition,
+               noted, location, language, extra_desc):
+        book = BookEntity.query.filter_by(ISBN=ISBN).first()
+        if book is None:
+            book = BookEntity(ISBN)
+            book.register()
+            book = BookEntity.query.filter_by(ISBN=ISBN).first()
+        self.book_id    = book.book_id
+        self.name       = name
+        self.price      = price
+        self.images     = images
+        self.condition  = condition
+        self.noted      = noted
+        self.location   = location
+        self.language   = language
+        self.extra_desc = extra_desc
+        self.update_time = datetime.now()
+        db.session.commit()
+        return
+
+    @property
+    def book(self):
+        return BookEntity.query.filter_by(book_id=self.book_id).first()
+
     @property
     def seller(self):
         return AccountEntity.query.filter_by(user_id=self.seller_id).first()
@@ -227,9 +250,9 @@ class ProductEntity(db.Model):
         return len(SeenRelationship.query.filter_by(product_id=self.product_id).all())
 
     @property
-    def comments(self):
+    def comments_json(self):
         return [
-            CommentEntity.query.filter_by(comment_id=cid).first().json()
+            CommentEntity.query.filter_by(comment_id=cid).first().json
             for cid in self.comments
         ]
 
@@ -265,7 +288,7 @@ class ProductEntity(db.Model):
             "location"         : self.location,
             "language"         : self.language,
             "extraDescription" : self.extra_desc,
-            "comments"         : self.comments,
+            "comments"         : self.comments_json,
             "createTime"       : self.create_time,
             "updateTime"       : self.update_time,
         }
