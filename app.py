@@ -32,7 +32,7 @@ DB_NAME     = os.environ.get("DB_NAME")
 from utils.my_logging import *
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
-# app.config['DEBUG'] = True
+app.config["DEBUG"] = True
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_DATABASE_URI"] = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/{DB_NAME}"
 app.url_map.strict_slashes = False

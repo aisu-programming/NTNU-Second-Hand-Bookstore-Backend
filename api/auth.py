@@ -63,11 +63,16 @@ def register(username, password, display_name, email, phone, **kwargs):
         if len(display_name) > 30               : raise DataInvalidException("Display name")
         if len(email) > 50 or ('@' not in email): raise DataInvalidException("Email")
         if len(phone) > 10                      : raise DataInvalidException("Phone")
+        int(phone)  # Check phone composed by pure numbers
 
         flask_logger.info(f"IP '{kwargs['remote_addr']}' tries to register with username '{username}'.")
         Account().register(username, password, display_name, email, phone)
         flask_logger.info(f"User '{username}' ({display_name}) has successfully registered.")
         return HTTPResponse("Success.")
+
+    except ValueError:
+        flask_logger.warning(f"ValueError: IP '{kwargs['remote_addr']}' / Username '{username}'.")
+        return HTTPError(f"Phone invalid.", 403)
 
     except DataInvalidException as ex:
         flask_logger.warning(f"DataInvalidException: IP '{kwargs['remote_addr']}' / Username '{username}'.")

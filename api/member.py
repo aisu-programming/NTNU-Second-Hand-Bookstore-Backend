@@ -38,14 +38,19 @@ def my_information(**kwargs):
 
         @Request.json("display_name: str", "email: str", "phone: str")
         def edit_info(display_name, email, phone):
-            if len(display_name) > 30: raise DataInvalidException("displayName")
-            if len(email) > 30       : raise DataInvalidException("email")
-            if len(phone) > 30       : raise DataInvalidException("phone")
+            if len(display_name) == 0 or len(display_name) > 30        : raise DataInvalidException("displayName")
+            if len(email) == 0 or len(email) > 50 or ('@' not in email): raise DataInvalidException("email")
+            if len(phone) == 0 or len(phone) > 10                      : raise DataInvalidException("phone")
+            int(phone)  # Check phone composed by pure numbers
             user.edit_information(display_name, email, phone)
             return HTTPResponse("Success.")
 
         methods = { "GET": get_info, "PATCH": edit_info }
         return methods[request.method]()
+
+    except ValueError:
+        flask_logger.warning(f"ValueError: User '{user.username}' ({user.display_name}) tried to edit information.")
+        return HTTPError(f"Phone invalid.", 403)
 
     except DataInvalidException as ex:
         flask_logger.warning(f"DataInvalidException: User '{user.username}' ({user.display_name}) tried to edit information.")
@@ -323,12 +328,13 @@ def new_product(ISBN, name, price, images, condition, noted,
     user = kwargs["user"].entity
     try:
         seller_id = user.user_id
-        if len(ISBN) > 13               : raise DataInvalidException("ISBN")
-        if len(name) > 30               : raise DataInvalidException("Name")
-        if len(images) > 10             : raise DataInvalidException("Images")
-        if len(location) > 30           : raise DataInvalidException("Location")
-        if len(language) > 10           : raise DataInvalidException("Language")
-        if len(extra_description) > 1000: raise DataInvalidException("Extra description")
+        name = name.strip()
+        if len(ISBN) != 10 and len(ISBN) != 13: raise DataInvalidException("ISBN")
+        if len(name) == 0 or len(name) > 30   : raise DataInvalidException("Name")
+        if len(images) > 10                   : raise DataInvalidException("Images")
+        if len(location) > 30                 : raise DataInvalidException("Location")
+        if len(language) > 10                 : raise DataInvalidException("Language")
+        if len(extra_description) > 1000      : raise DataInvalidException("Extra description")
         ProductEntity(ISBN, seller_id, name, price, images, condition,
                       noted, location, language, extra_description).register()
         return HTTPResponse("Success.")
@@ -356,8 +362,16 @@ def fetch_notifications(**kwargs):
             timestamp = int(timestamp)
             notifications = list(filter(lambda n: n.create_time.timestamp() > timestamp, notifications))
 
+        notifications.reverse()
+        notification_jsons = [ n.json for n in notifications ]
+
+        notifications = NotificationEntity.query.filter_by(user_id=user.user_id).all()
+        read = request.args.get("read")
+        if read == "true":
+            for notification in notifications: notification.update_read()
+        
         return HTTPResponse("Success.", data={
-            "notifications": [ n.json for n in notifications ],
+            "notifications": notification_jsons,
             "timestamp"    : str(int(datetime.now().timestamp())),
         })
 

@@ -48,13 +48,16 @@ def search_products(keywords, **kwargs):
         products_not_sold_out = list(filter(lambda p:     p.for_sale, products_not_sold_out))
         products_is_sold_out  = list(filter(lambda p:     p.sold_out, products))
         products_not_sold_out = list(filter(
-            lambda p: sum([ kw in p.name for kw in keywords ]) or sum([ kw in p.extra_desc for kw in keywords ]),
+            lambda p: sum([ kw in p.name                for kw in keywords ]) or
+                      sum([ kw in p.extra_desc          for kw in keywords ]) or 
+                      sum([ kw in p.seller.display_name for kw in keywords ]),
             products_not_sold_out
         ))
         products_not_sold_out = sorted(products_not_sold_out,
             key=lambda p: sum([
-                sum([ kw in p.name       for kw in keywords ]) * 100000,
-                sum([ kw in p.extra_desc for kw in keywords ]) * 1000,
+                sum([ kw in p.name                for kw in keywords ]) * 100000,
+                sum([ kw in p.extra_desc          for kw in keywords ]) * 1000,
+                sum([ kw in p.seller.display_name for kw in keywords ]) * 100,
                 p.likes * 10,
                 p.views,
             ]),
@@ -104,7 +107,7 @@ def get_product_detail(**kwargs):
         return HTTPResponse("Success.", data={"details": product.detail_json})
 
     except ValueError:
-        flask_logger.warning(f"ValueError: IP '{kwargs['remote_addr']}' tried to view product '{product_id}'")
+        flask_logger.warning(f"ValueError: IP '{kwargs['remote_addr']}' tried to view product")
         return HTTPError("Requested Value With Wrong Type.", 400)
 
     except ProductIdNotExistsException:
@@ -203,7 +206,8 @@ def leave_comment(product_id, content, **kwargs):
     
     user = kwargs["user"].entity
     try:
-        if len(content) > 100: raise DataInvalidException
+        content = content.strip()
+        if len(content) == 0 or len(content) > 100: raise DataInvalidException
         # Check product exist
         product = ProductEntity.query.filter_by(product_id=product_id).first()
         if product is None: raise ProductIdNotExistsException
@@ -212,7 +216,7 @@ def leave_comment(product_id, content, **kwargs):
 
     except DataInvalidException:
         flask_logger.warning(f"DataIncorrectException: User '{user.username}' ({user.display_name}) tried to comment product '{product_id}'")
-        return HTTPError("Comment exceeds length limitation.", 403)
+        return HTTPError("Comment content invalid or exceeds length limitation.", 403)
 
     except ProductIdNotExistsException:
         flask_logger.warning(f"ProductIdNotExists: User '{user.username}' ({user.display_name}) tried to comment product '{product_id}'")

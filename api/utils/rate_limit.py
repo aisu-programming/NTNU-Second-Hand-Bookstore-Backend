@@ -14,7 +14,7 @@ from database.model import Connection
 ''' Functions '''
 def rate_limit(original_function=None, ip_based=False, limit=None):
 
-    if limit is None: limit = 40 if ip_based else 8
+    if limit is None: limit = 60 if ip_based else 20
 
     def _decorate(function):
 

@@ -140,7 +140,7 @@ class BookEntity(db.Model):
 class ProductEntity(db.Model):
     __tablename__ = "product"
     product_id   = Column(SMALLINT(unsigned=True), primary_key=True)
-    book_id      = Column(SMALLINT(unsigned=True), nullable=False, unique=True)  # BookEntity.book_id
+    book_id      = Column(SMALLINT(unsigned=True), nullable=False)  # BookEntity.book_id
     seller_id    = Column(SMALLINT(unsigned=True), nullable=False)  # AccountEntity.user_id
     name         = Column(VARCHAR(30),             nullable=False)
     price        = Column(SMALLINT(unsigned=True), nullable=False)
@@ -337,6 +337,11 @@ class NotificationEntity(db.Model):
     def register(self):
         # self.create_time = datetime.now()
         db.session.add(self)
+        db.session.commit()
+        return
+
+    def update_read(self):
+        self.read = True
         db.session.commit()
         return
 
